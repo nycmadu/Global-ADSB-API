@@ -4,23 +4,23 @@ const https = require("https");
 const express = require("express");
 const app = express();
 
-/** ================== CONFIG ================== **/
-const PORT = process.env.PORT || 3200;
-const AIRPLANES_BASE = "https://api.airplanes.live";
-const RADIUS = 250;                               // nm per query (max)
 
-const TICK_MS = 1000;                             // emit/update once per second
+const PORT = process.env.PORT || 3200;
+const AIRPLANES_BASE = "https://api.airplanes.live"; //dad blessed
+const RADIUS = 250;                              
+
+const TICK_MS = 1000;                          
 
 // HTTP agent tuning for massive parallel fan-out
 const agent = new https.Agent({
   keepAlive: true,
-  maxSockets: Infinity,       // let Node open as many as needed
+  maxSockets: Infinity,       
   maxFreeSockets: 4096,
   timeout: 15000,
   keepAliveMsecs: 5000
 });
 
-/** ============== LOAD POINTS LIST ============== **/
+// load points.json
 const POINTS_PATH = path.join(__dirname, "points.json");
 let POINTS = [];
 try {
@@ -34,7 +34,7 @@ if (!Array.isArray(POINTS) || POINTS.length === 0) {
   process.exit(1);
 }
 
-/** ============== HELPERS ============== **/
+
 function fetchPoint(lat, lon, radiusNm) {
   return new Promise((resolve, reject) => {
     const url = `${AIRPLANES_BASE}/v2/point/${lat}/${lon}/${radiusNm}`;
@@ -56,11 +56,11 @@ function fetchPoint(lat, lon, radiusNm) {
             try {
               resolve(JSON.parse(body));
             } catch (e) {
-              // If a single point returns malformed JSON, treat as empty
+            
               resolve({ ac: [] });
             }
           } else {
-            // Treat upstream errors as empty for this tick to avoid breaking stream
+            // 403 is get rate limit
             resolve({ ac: [] });
           }
         });
@@ -71,7 +71,7 @@ function fetchPoint(lat, lon, radiusNm) {
   });
 }
 
-// merge & dedupe by hex (prefer freshest seen/seen_pos)
+
 function mergeAircraft(lists) {
   const byHex = new Map();
   for (const list of lists) {
@@ -92,7 +92,7 @@ function mergeAircraft(lists) {
   return Array.from(byHex.values());
 }
 
-/** ============== ROUTES ============== **/
+// routes ex. /stream
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -101,8 +101,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// ONE global SSE stream that hits EVERY point once per second
-// and emits exactly: data: {"ac":[ ... ]}\n\n
+// global see stream hits points.json
 app.get("/stream", async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -116,7 +115,7 @@ app.get("/stream", async (req, res) => {
   const tick = async () => {
     if (!alive) return;
 
-    // Fire all requests for this second in parallel
+  
     const tasks = POINTS.map(p =>
       fetchPoint(p.lat, p.lon, RADIUS).catch(() => ({ ac: [] }))
     );
@@ -126,7 +125,7 @@ app.get("/stream", async (req, res) => {
       const merged = mergeAircraft(results);
       res.write(`data: ${JSON.stringify({ ac: merged })}\n\n`);
     } catch {
-      // Still keep the stream going
+      // keep sse
       res.write(`data: {"ac":[]}\n\n`);
     }
 
@@ -136,7 +135,7 @@ app.get("/stream", async (req, res) => {
   tick();
 });
 
-/** ============== START ============== **/
+// starts on port 3200
 app.listen(PORT, "0.0.0.0", () => {
   console.log(
     `[INFO] Global ALL-POINTS stream on :${PORT} | points=${POINTS.length} | radius=${RADIUS}nm | 1 tick/sec (EVERY point each tick)`
